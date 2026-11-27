@@ -55,15 +55,15 @@ private fun FrameLabScreen() {
             selected = clips.lastIndex
         }
     }
-    val player = remember { ExoPlayer.Builder(context).build() }
-    DisposableEffect(player) { onDispose { player.release() } }
+    val exoPlayer = remember { ExoPlayer.Builder(context).build() }
+    DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     LaunchedEffect(clips, selected) {
         val uri = clips.getOrNull(selected)
-        if (uri == null) player.clearMediaItems()
+        if (uri == null) exoPlayer.clearMediaItems()
         else {
-            player.setMediaItem(MediaItem.fromUri(uri))
-            player.prepare()
-            player.playWhenReady = false
+            exoPlayer.setMediaItem(MediaItem.fromUri(uri))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = false
         }
     }
 
@@ -77,7 +77,7 @@ private fun FrameLabScreen() {
                     Text("FRAMELAB", color = Color.White, fontSize = 23.sp)
                     Text("VIDEO STUDIO  •  PROJETO 01", color = Muted, fontSize = 10.sp)
                 }
-                Text("0.1.0", color = Muted, fontSize = 11.sp)
+                Text("0.1.1", color = Muted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -101,8 +101,8 @@ private fun FrameLabScreen() {
                     }
                 } else {
                     AndroidView(factory = { ctx ->
-                        PlayerView(ctx).apply { player = player; useController = true }
-                    }, modifier = Modifier.fillMaxSize())
+                        PlayerView(ctx).apply { player = exoPlayer; useController = true }
+                    }, modifier = Modifier.fillMaxSize(), update = { it.player = exoPlayer })
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -136,7 +136,7 @@ private fun FrameLabScreen() {
                 Tool("Exportar", "↑", Modifier.weight(1f))
             }
             Spacer(Modifier.height(7.dp))
-            Text("Base inicial: edição e exportação ainda em desenvolvimento.",
+            Text("Importação e pré-visualização disponíveis • ferramentas em desenvolvimento.",
                 color = Muted, fontSize = 9.sp)
         }
     }
