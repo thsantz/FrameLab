@@ -62,7 +62,7 @@ private fun FrameLabScreen() {
         }.getOrDefault(emptyList())
     }
     var clips by remember { mutableStateOf(restoredClips) }
-    var selected by remember { mutableIntStateOf(projectPrefs.getInt("selected", 0).coerceAtLeast(0)) }
+    var selected by remember { mutableIntStateOf(projectPrefs.getInt("selected", 0).coerceIn(0, (restoredClips.size - 1).coerceAtLeast(0))) }
     var notice by remember { mutableStateOf("Importe vídeos para começar.") }
     var durationMs by remember { mutableLongStateOf(0L) }
     var trimStartMs by remember { mutableLongStateOf(0L) }
