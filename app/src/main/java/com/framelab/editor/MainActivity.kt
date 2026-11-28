@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import org.json.JSONArray
 
 private val Bg = Color(0xFF0B0D12)
 private val Panel = Color(0xFF171B24)
@@ -51,14 +52,31 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun FrameLabScreen() {
     val context = LocalContext.current
-    var clips by remember { mutableStateOf(emptyList<Uri>()) }
-    var selected by remember { mutableIntStateOf(0) }
+    val projectPrefs = remember { context.getSharedPreferences("framelab_project", android.content.Context.MODE_PRIVATE) }
+    val restoredClips = remember {
+        runCatching {
+            val saved = JSONArray(projectPrefs.getString("clips", "[]"))
+            (0 until saved.length()).mapNotNull { index ->
+                saved.optString(index).takeIf { it.isNotBlank() }?.let(Uri::parse)
+            }
+        }.getOrDefault(emptyList())
+    }
+    var clips by remember { mutableStateOf(restoredClips) }
+    var selected by remember { mutableIntStateOf(projectPrefs.getInt("selected", 0).coerceAtLeast(0)) }
     var notice by remember { mutableStateOf("Importe vídeos para começar.") }
     var durationMs by remember { mutableLongStateOf(0L) }
     var trimStartMs by remember { mutableLongStateOf(0L) }
     var trimEndMs by remember { mutableLongStateOf(0L) }
     var showTrim by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(clips, selected) {
+        val serialized = JSONArray().apply { clips.forEach { put(it.toString()) } }.toString()
+        projectPrefs.edit()
+            .putString("clips", serialized)
+            .putInt("selected", selected.coerceIn(0, (clips.size - 1).coerceAtLeast(0)))
+            .apply()
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
@@ -194,9 +212,9 @@ private fun FrameLabScreen() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("FRAMELAB", color = Color.White, fontSize = 23.sp)
-                    Text("VIDEO STUDIO  •  PROJETO 01", color = Muted, fontSize = 10.sp)
+                    Text("VIDEO STUDIO  •  SALVAMENTO AUTOMÁTICO", color = Muted, fontSize = 10.sp)
                 }
-                Text("0.3.0", color = Muted, fontSize = 11.sp)
+                Text("0.4.0", color = Muted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -294,7 +312,7 @@ private fun FrameLabScreen() {
                 Text("Exportando vídeo… mantenha o aplicativo aberto.", color = Muted, fontSize = 10.sp)
             }
             Text(notice, color = Muted, fontSize = 9.sp)
-            Text("Corte de clipe único e exportação MP4 em implementação inicial. Áudio, texto e cor ainda indisponíveis.",
+            Text("Projeto e ordem dos clipes salvos automaticamente neste dispositivo. Corte e exportação MP4 disponíveis; áudio, texto e cor ainda indisponíveis.",
                 color = Muted, fontSize = 9.sp)
         }
 
