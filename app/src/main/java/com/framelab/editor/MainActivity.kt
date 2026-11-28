@@ -169,7 +169,7 @@ private fun FrameLabScreen() {
                 EditedMediaItem.Builder(builder.build()).build()
             }
             val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
-            val composition = Composition.Builder(videoSequence).build()
+            val composition = Composition.Builder(listOf(videoSequence)).build()
             try {
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {
