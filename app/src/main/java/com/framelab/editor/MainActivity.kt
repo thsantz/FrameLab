@@ -174,21 +174,21 @@ private fun FrameLabScreen() {
             exportProgress = 0f
             notice = "Preparando sequência completa para exportação MP4…"
             val outputFile = File(context.cacheDir, "framelab_export_${System.currentTimeMillis()}.mp4")
-            val editedItems = clips.mapIndexed { index, uri ->
-                val builder = MediaItem.Builder().setUri(uri)
-                if (index == selected) {
-                    builder.setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder()
-                            .setStartPositionMs(trimStartMs)
-                            .setEndPositionMs(trimEndMs)
-                            .build()
-                    )
-                }
-                EditedMediaItem.Builder(builder.build()).build()
-            }
-            val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
-            val composition = Composition.Builder(listOf(videoSequence)).build()
             try {
+                val editedItems = clips.mapIndexed { index, uri ->
+                    val builder = MediaItem.Builder().setUri(uri)
+                    if (index == selected) {
+                        builder.setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(trimStartMs)
+                                .setEndPositionMs(trimEndMs)
+                                .build()
+                        )
+                    }
+                    EditedMediaItem.Builder(builder.build()).build()
+                }
+                val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
+                val composition = Composition.Builder(listOf(videoSequence)).build()
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
