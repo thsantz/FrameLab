@@ -76,11 +76,24 @@ private fun FrameLabScreen() {
         }.getOrDefault(emptyList())
     }
     val restoredMusic = remember { projectPrefs.getString("music_uri", null)?.let(Uri::parse) }
+    val restoredTrimRanges = remember {
+        runCatching {
+            val saved = JSONArray(projectPrefs.getString("trim_ranges", "[]"))
+            (0 until saved.length()).mapNotNull { index ->
+                saved.optJSONArray(index)?.let { range ->
+                    range.optLong(0) to range.optLong(1)
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
     var musicUri by remember { mutableStateOf(restoredMusic) }
     var overlayText by remember { mutableStateOf(projectPrefs.getString("overlay_text", "") ?: "") }
     var textDraft by remember { mutableStateOf(overlayText) }
     var showTextEditor by remember { mutableStateOf(false) }
     var clips by remember { mutableStateOf(restoredClips) }
+    var trimRanges by remember {
+        mutableStateOf(restoredTrimRanges + List((restoredClips.size - restoredTrimRanges.size).coerceAtLeast(0)) { 0L to 0L })
+    }
     var selected by remember { mutableIntStateOf(projectPrefs.getInt("selected", 0).coerceIn(0, (restoredClips.size - 1).coerceAtLeast(0))) }
     var notice by remember { mutableStateOf("Importe vídeos para começar.") }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -104,13 +117,19 @@ private fun FrameLabScreen() {
         }
     }
 
-    LaunchedEffect(clips, selected, musicUri) {
+    LaunchedEffect(clips, selected, musicUri, overlayText, trimRanges) {
         val serialized = JSONArray().apply { clips.forEach { put(it.toString()) } }.toString()
+        val serializedRanges = JSONArray().apply {
+            trimRanges.forEach { (start, end) ->
+                put(JSONArray().put(start).put(end))
+            }
+        }.toString()
         projectPrefs.edit()
             .putString("clips", serialized)
             .putInt("selected", selected.coerceIn(0, (clips.size - 1).coerceAtLeast(0)))
             .putString("music_uri", musicUri?.toString())
             .putString("overlay_text", overlayText)
+            .putString("trim_ranges", serializedRanges)
             .apply()
     }
 
@@ -124,6 +143,7 @@ private fun FrameLabScreen() {
                 }
             }
             clips = clips + uris
+            trimRanges = trimRanges + List(uris.size) { 0L to 0L }
             selected = clips.lastIndex
             notice = "${uris.size} mídia(s) adicionada(s) à sequência."
         }
@@ -170,8 +190,16 @@ private fun FrameLabScreen() {
                 }
             }
             durationMs = foundDuration
-            trimStartMs = 0L
-            trimEndMs = foundDuration
+            val savedRange = trimRanges.getOrNull(selected)
+            val restoredStart = savedRange?.first?.coerceIn(0L, (foundDuration - 1L).coerceAtLeast(0L)) ?: 0L
+            val restoredEnd = savedRange?.second?.takeIf { it > restoredStart }?.coerceAtMost(foundDuration) ?: foundDuration
+            trimStartMs = restoredStart
+            trimEndMs = restoredEnd
+            if (selected in trimRanges.indices) {
+                trimRanges = trimRanges.toMutableList().also { it[selected] = restoredStart to restoredEnd }
+            } else {
+                trimRanges = trimRanges + (restoredStart to restoredEnd)
+            }
             if (foundDuration <= 0L) notice = "Não foi possível ler a duração deste vídeo."
         }
     }
@@ -184,6 +212,13 @@ private fun FrameLabScreen() {
             reordered[selected] = reordered[target]
             reordered[target] = current
             clips = reordered
+            if (selected in trimRanges.indices && target in trimRanges.indices) {
+                val reorderedRanges = trimRanges.toMutableList()
+                val range = reorderedRanges[selected]
+                reorderedRanges[selected] = reorderedRanges[target]
+                reorderedRanges[target] = range
+                trimRanges = reorderedRanges
+            }
             selected = target
             notice = "Ordem dos clipes atualizada."
         }
@@ -193,6 +228,7 @@ private fun FrameLabScreen() {
         if (clips.isNotEmpty() && selected in clips.indices) {
             val updated = clips.toMutableList().also { it.removeAt(selected) }
             clips = updated
+            if (selected in trimRanges.indices) trimRanges = trimRanges.toMutableList().also { it.removeAt(selected) }
             selected = if (updated.isEmpty()) 0 else selected.coerceAtMost(updated.lastIndex)
             notice = "Clipe removido da sequência. O arquivo original foi preservado."
         }
@@ -209,11 +245,12 @@ private fun FrameLabScreen() {
             try {
                 val editedItems = clips.mapIndexed { index, uri ->
                     val builder = MediaItem.Builder().setUri(uri)
-                    if (index == selected) {
+                    val clipRange = trimRanges.getOrNull(index)
+                    if (clipRange != null && clipRange.second > clipRange.first) {
                         builder.setClippingConfiguration(
                             MediaItem.ClippingConfiguration.Builder()
-                                .setStartPositionMs(trimStartMs)
-                                .setEndPositionMs(trimEndMs)
+                                .setStartPositionMs(clipRange.first)
+                                .setEndPositionMs(clipRange.second)
                                 .build()
                         )
                     }
@@ -296,7 +333,7 @@ private fun FrameLabScreen() {
                     Text("FRAMELAB", color = Color.White, fontSize = 23.sp)
                     Text("VIDEO STUDIO  •  SALVAMENTO AUTOMÁTICO", color = Muted, fontSize = 10.sp)
                 }
-                Text("0.5.0", color = Muted, fontSize = 11.sp)
+                Text("0.6.0", color = Muted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -418,7 +455,7 @@ private fun FrameLabScreen() {
                     color = Muted, fontSize = 10.sp)
             }
             Text(notice, color = Muted, fontSize = 9.sp)
-            Text("Projeto, texto e ordem dos clipes salvos automaticamente. Texto sobreposto, corte e exportação MP4 disponíveis; correção de cor ainda em desenvolvimento.",
+            Text("Projeto, texto, ordem e cortes individuais dos clipes salvos automaticamente. Texto sobreposto e exportação MP4 disponíveis; correção de cor ainda em desenvolvimento.",
                 color = Muted, fontSize = 9.sp)
         }
 
@@ -481,6 +518,9 @@ private fun FrameLabScreen() {
                                     }
                                     trimStartMs = start
                                     trimEndMs = end
+                                    if (selected in trimRanges.indices) {
+                                        trimRanges = trimRanges.toMutableList().also { it[selected] = start to end }
+                                    }
                                 },
                                 valueRange = 0f..durationMs.toFloat()
                             )
