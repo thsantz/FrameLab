@@ -224,6 +224,26 @@ private fun FrameLabScreen() {
         }
     }
 
+    fun splitSelectedAtPlayhead() {
+        if (selected !in clips.indices) return
+        val currentUri = clips[selected]
+        val currentRange = trimRanges.getOrNull(selected) ?: (0L to durationMs)
+        val start = currentRange.first
+        val end = currentRange.second.takeIf { it > start } ?: durationMs
+        val splitPoint = exoPlayer.currentPosition.coerceIn(0L, durationMs)
+        if (splitPoint <= start + 250L || splitPoint >= end - 250L) {
+            notice = "Posicione a reprodução dentro do clipe, deixando ao menos 0,25 s de cada lado, para dividir."
+            return
+        }
+        val updatedClips = clips.toMutableList().also { it.add(selected + 1, currentUri) }
+        val updatedRanges = trimRanges.toMutableList()
+        while (updatedRanges.size < clips.size) updatedRanges.add(0L to 0L)
+        updatedRanges[selected] = start to splitPoint
+        updatedRanges.add(selected + 1, splitPoint to end)
+        clips = updatedClips
+        trimRanges = updatedRanges
+        notice = "Clipe dividido no ponto ${formatTime(splitPoint)}. Os dois trechos podem ser editados separadamente."
+    }
     fun removeSelected() {
         if (clips.isNotEmpty() && selected in clips.indices) {
             val updated = clips.toMutableList().also { it.removeAt(selected) }
@@ -333,7 +353,7 @@ private fun FrameLabScreen() {
                     Text("FRAMELAB", color = Color.White, fontSize = 23.sp)
                     Text("VIDEO STUDIO  •  SALVAMENTO AUTOMÁTICO", color = Muted, fontSize = 10.sp)
                 }
-                Text("0.6.0", color = Muted, fontSize = 11.sp)
+                Text("0.7.0", color = Muted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -419,6 +439,11 @@ private fun FrameLabScreen() {
                     modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) {
                     Text("Mover →", fontSize = 11.sp)
                 }
+                OutlinedButton(onClick = { splitSelectedAtPlayhead() },
+                    enabled = clips.isNotEmpty() && durationMs > 0L,
+                    modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("Dividir", fontSize = 11.sp)
+                }
                 OutlinedButton(onClick = { removeSelected() }, enabled = clips.isNotEmpty(),
                     modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF8A8A))) {
@@ -455,7 +480,7 @@ private fun FrameLabScreen() {
                     color = Muted, fontSize = 10.sp)
             }
             Text(notice, color = Muted, fontSize = 9.sp)
-            Text("Projeto, texto, ordem e cortes individuais dos clipes salvos automaticamente. Texto sobreposto e exportação MP4 disponíveis; correção de cor ainda em desenvolvimento.",
+            Text("Projeto, texto, ordem, cortes e divisões individuais salvos automaticamente. Texto sobreposto e exportação MP4 disponíveis; correção de cor ainda em desenvolvimento.",
                 color = Muted, fontSize = 9.sp)
         }
 
