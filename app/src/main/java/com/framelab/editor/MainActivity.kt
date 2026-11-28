@@ -202,12 +202,11 @@ private fun FrameLabScreen() {
                     }
                     EditedMediaItem.Builder(builder.build()).build()
                 }
-                val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
+                val videoSequence = EditedMediaItemSequence.Builder(editedItems).build()
                 val sequences = mutableListOf(videoSequence)
                 musicUri?.let { audioUri ->
                     val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(audioUri)).build()
-                    val musicSequence = EditedMediaItemSequence.withAudioFrom(listOf(musicItem))
-                        .buildUpon()
+                    val musicSequence = EditedMediaItemSequence.Builder(listOf(musicItem))
                         .setIsLooping(true)
                         .build()
                     sequences.add(musicSequence)
