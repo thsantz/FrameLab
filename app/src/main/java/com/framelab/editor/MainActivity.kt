@@ -91,7 +91,7 @@ private fun FrameLabScreen() {
         }
     }
 
-    LaunchedEffect(clips, selected) {
+    LaunchedEffect(clips, selected, musicUri) {
         val serialized = JSONArray().apply { clips.forEach { put(it.toString()) } }.toString()
         projectPrefs.edit()
             .putString("clips", serialized)
@@ -138,6 +138,9 @@ private fun FrameLabScreen() {
             trimStartMs = 0L
             trimEndMs = 0L
         } else {
+            durationMs = 0L
+            trimStartMs = 0L
+            trimEndMs = 0L
             exoPlayer.setMediaItem(MediaItem.fromUri(uri))
             exoPlayer.prepare()
             exoPlayer.playWhenReady = false
@@ -359,7 +362,7 @@ private fun FrameLabScreen() {
                 }
                 Tool("Texto", "T", Modifier.weight(1f), enabled = false) {}
                 Tool("Cor", "◐", Modifier.weight(1f), enabled = false) {}
-                Tool("Exportar", "↑", Modifier.weight(1f), enabled = clips.isNotEmpty() && !exporting) {
+                Tool("Exportar", "↑", Modifier.weight(1f), enabled = clips.isNotEmpty() && durationMs > 0L && !exporting) {
                     if (durationMs > 0L) saveVideo.launch("FrameLab_sequencia_${System.currentTimeMillis()}.mp4")
                     else notice = "Aguarde a leitura da duração do vídeo."
                 }
