@@ -29,12 +29,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Transformer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import java.io.File
 import java.util.Locale
 import org.json.JSONArray
@@ -71,6 +73,21 @@ private fun FrameLabScreen() {
     var trimEndMs by remember { mutableLongStateOf(0L) }
     var showTrim by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var exportProgress by remember { mutableFloatStateOf(0f) }
+    var activeTransformer by remember { mutableStateOf<Transformer?>(null) }
+
+    LaunchedEffect(exporting) {
+        while (exporting) {
+            val transformer = activeTransformer
+            if (transformer != null) {
+                val holder = ProgressHolder()
+                if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    exportProgress = holder.progress.toFloat().coerceIn(0f, 100f)
+                }
+            }
+            delay(500)
+        }
+    }
 
     LaunchedEffect(clips, selected) {
         val serialized = JSONArray().apply { clips.forEach { put(it.toString()) } }.toString()
@@ -154,6 +171,7 @@ private fun FrameLabScreen() {
     ) { destinationUri ->
         if (destinationUri != null && clips.isNotEmpty() && durationMs > 0L) {
             exporting = true
+            exportProgress = 0f
             notice = "Preparando sequência completa para exportação MP4…"
             val outputFile = File(context.cacheDir, "framelab_export_${System.currentTimeMillis()}.mp4")
             val editedItems = clips.mapIndexed { index, uri ->
@@ -179,12 +197,14 @@ private fun FrameLabScreen() {
                                 val output = context.contentResolver.openOutputStream(destinationUri, "w")
                                     ?: error("Não foi possível abrir o destino escolhido.")
                                 input.use { source -> output.use { target -> source.copyTo(target) } }
+                                exportProgress = 100f
                                 notice = "Sequência exportada com sucesso: MP4 salvo no local escolhido."
                             } catch (error: Exception) {
                                 notice = "O vídeo foi processado, mas não pôde ser salvo: ${error.message ?: "erro de arquivo"}"
                             } finally {
                                 outputFile.delete()
                                 exporting = false
+                                activeTransformer = null
                             }
                         }
 
@@ -195,14 +215,17 @@ private fun FrameLabScreen() {
                         ) {
                             outputFile.delete()
                             exporting = false
+                            activeTransformer = null
                             notice = "Falha na exportação: ${exportException.message ?: "formato não suportado"}"
                         }
                     })
                     .build()
+                activeTransformer = transformer
                 transformer.start(composition, outputFile.absolutePath)
             } catch (error: Exception) {
                 outputFile.delete()
                 exporting = false
+                activeTransformer = null
                 notice = "Não foi possível iniciar a exportação: ${error.message ?: "erro inesperado"}"
             }
         } else if (destinationUri != null) {
@@ -314,8 +337,13 @@ private fun FrameLabScreen() {
             }
             Spacer(Modifier.height(7.dp))
             if (exporting) {
-                LinearProgressIndicator(Modifier.fillMaxWidth(), color = Violet)
-                Text("Exportando vídeo… mantenha o aplicativo aberto.", color = Muted, fontSize = 10.sp)
+                LinearProgressIndicator(
+                    progress = { exportProgress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Violet
+                )
+                Text("Exportando sequência: ${exportProgress.toInt()}% • mantenha o aplicativo aberto.",
+                    color = Muted, fontSize = 10.sp)
             }
             Text(notice, color = Muted, fontSize = 9.sp)
             Text("Projeto e ordem dos clipes salvos automaticamente neste dispositivo. Corte e exportação MP4 disponíveis; áudio, texto e cor ainda indisponíveis.",
