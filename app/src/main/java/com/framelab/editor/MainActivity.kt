@@ -29,6 +29,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Transformer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
@@ -150,20 +152,24 @@ private fun FrameLabScreen() {
     val saveVideo = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("video/mp4")
     ) { destinationUri ->
-        val sourceUri = clips.getOrNull(selected)
-        if (destinationUri != null && sourceUri != null && durationMs > 0L) {
+        if (destinationUri != null && clips.isNotEmpty() && durationMs > 0L) {
             exporting = true
-            notice = "Preparando exportação MP4…"
+            notice = "Preparando sequência completa para exportação MP4…"
             val outputFile = File(context.cacheDir, "framelab_export_${System.currentTimeMillis()}.mp4")
-            val mediaItem = MediaItem.Builder()
-                .setUri(sourceUri)
-                .setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(trimStartMs)
-                        .setEndPositionMs(trimEndMs)
-                        .build()
-                )
-                .build()
+            val editedItems = clips.mapIndexed { index, uri ->
+                val builder = MediaItem.Builder().setUri(uri)
+                if (index == selected) {
+                    builder.setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(trimStartMs)
+                            .setEndPositionMs(trimEndMs)
+                            .build()
+                    )
+                }
+                EditedMediaItem.Builder(builder.build()).build()
+            }
+            val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
+            val composition = Composition.Builder(videoSequence).build()
             try {
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {
@@ -173,7 +179,7 @@ private fun FrameLabScreen() {
                                 val output = context.contentResolver.openOutputStream(destinationUri, "w")
                                     ?: error("Não foi possível abrir o destino escolhido.")
                                 input.use { source -> output.use { target -> source.copyTo(target) } }
-                                notice = "Exportação concluída: MP4 salvo no local escolhido."
+                                notice = "Sequência exportada com sucesso: MP4 salvo no local escolhido."
                             } catch (error: Exception) {
                                 notice = "O vídeo foi processado, mas não pôde ser salvo: ${error.message ?: "erro de arquivo"}"
                             } finally {
@@ -193,7 +199,7 @@ private fun FrameLabScreen() {
                         }
                     })
                     .build()
-                transformer.start(mediaItem, outputFile.absolutePath)
+                transformer.start(composition, outputFile.absolutePath)
             } catch (error: Exception) {
                 outputFile.delete()
                 exporting = false
@@ -302,7 +308,7 @@ private fun FrameLabScreen() {
                 Tool("Texto", "T", Modifier.weight(1f), enabled = false) {}
                 Tool("Cor", "◐", Modifier.weight(1f), enabled = false) {}
                 Tool("Exportar", "↑", Modifier.weight(1f), enabled = clips.isNotEmpty() && !exporting) {
-                    if (durationMs > 0L) saveVideo.launch("FrameLab_${System.currentTimeMillis()}.mp4")
+                    if (durationMs > 0L) saveVideo.launch("FrameLab_sequencia_${System.currentTimeMillis()}.mp4")
                     else notice = "Aguarde a leitura da duração do vídeo."
                 }
             }
@@ -322,7 +328,7 @@ private fun FrameLabScreen() {
                 title = { Text("Cortar clipe") },
                 text = {
                     Column {
-                        Text("Defina o trecho que será exportado.", color = Muted, fontSize = 12.sp)
+                        Text("O corte será aplicado ao clipe selecionado; os demais clipes serão mantidos na sequência.", color = Muted, fontSize = 12.sp)
                         Spacer(Modifier.height(12.dp))
                         Text("Início: ${formatTime(trimStartMs)}", color = Color.White)
                         Text("Fim: ${formatTime(trimEndMs)}  •  Duração: ${formatTime((trimEndMs - trimStartMs).coerceAtLeast(0L))}",
@@ -353,7 +359,7 @@ private fun FrameLabScreen() {
                     Button(onClick = {
                         showTrim = false
                         saveVideo.launch("FrameLab_corte_${System.currentTimeMillis()}.mp4")
-                    }, enabled = !exporting && trimEndMs > trimStartMs) { Text("Exportar trecho") }
+                    }, enabled = !exporting && trimEndMs > trimStartMs) { Text("Exportar sequência") }
                 },
                 dismissButton = {
                     TextButton(onClick = { showTrim = false }) { Text("Cancelar") }
