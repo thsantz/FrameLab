@@ -65,6 +65,8 @@ private fun FrameLabScreen() {
             }
         }.getOrDefault(emptyList())
     }
+    val restoredMusic = remember { projectPrefs.getString("music_uri", null)?.let(Uri::parse) }
+    var musicUri by remember { mutableStateOf(restoredMusic) }
     var clips by remember { mutableStateOf(restoredClips) }
     var selected by remember { mutableIntStateOf(projectPrefs.getInt("selected", 0).coerceIn(0, (restoredClips.size - 1).coerceAtLeast(0))) }
     var notice by remember { mutableStateOf("Importe vídeos para começar.") }
@@ -94,6 +96,7 @@ private fun FrameLabScreen() {
         projectPrefs.edit()
             .putString("clips", serialized)
             .putInt("selected", selected.coerceIn(0, (clips.size - 1).coerceAtLeast(0)))
+            .putString("music_uri", musicUri?.toString())
             .apply()
     }
 
@@ -109,6 +112,18 @@ private fun FrameLabScreen() {
             clips = clips + uris
             selected = clips.lastIndex
             notice = "${uris.size} mídia(s) adicionada(s) à sequência."
+        }
+    }
+
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            musicUri = uri
+            notice = "Faixa de áudio adicionada à exportação."
         }
     }
 
@@ -188,7 +203,16 @@ private fun FrameLabScreen() {
                     EditedMediaItem.Builder(builder.build()).build()
                 }
                 val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(editedItems)
-                val composition = Composition.Builder(listOf(videoSequence)).build()
+                val sequences = mutableListOf(videoSequence)
+                musicUri?.let { audioUri ->
+                    val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(audioUri)).build()
+                    val musicSequence = EditedMediaItemSequence.withAudioFrom(listOf(musicItem))
+                        .buildUpon()
+                        .setIsLooping(true)
+                        .build()
+                    sequences.add(musicSequence)
+                }
+                val composition = Composition.Builder(sequences).build()
                 val transformer = Transformer.Builder(context)
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -327,7 +351,13 @@ private fun FrameLabScreen() {
                 Tool("Cortar", "✂", Modifier.weight(1f), enabled = clips.isNotEmpty() && durationMs > 0L) {
                     showTrim = true
                 }
-                Tool("Áudio", "♫", Modifier.weight(1f), enabled = false) {}
+                Tool(if (musicUri == null) "Áudio" else "Remover", "♫", Modifier.weight(1f)) {
+                    if (musicUri == null) audioPicker.launch(arrayOf("audio/*"))
+                    else {
+                        musicUri = null
+                        notice = "Faixa de áudio removida do projeto."
+                    }
+                }
                 Tool("Texto", "T", Modifier.weight(1f), enabled = false) {}
                 Tool("Cor", "◐", Modifier.weight(1f), enabled = false) {}
                 Tool("Exportar", "↑", Modifier.weight(1f), enabled = clips.isNotEmpty() && !exporting) {
