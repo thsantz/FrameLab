@@ -2,6 +2,11 @@ package com.framelab.editor
 
 import android.content.ContentValues
 import android.media.MediaMetadataRetriever
+import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.style.BackgroundColorSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
@@ -27,6 +32,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
@@ -34,6 +40,9 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Transformer
 import androidx.media3.ui.PlayerView
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.TextOverlay
+import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -53,6 +62,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
 private fun FrameLabScreen() {
     val context = LocalContext.current
@@ -67,6 +77,9 @@ private fun FrameLabScreen() {
     }
     val restoredMusic = remember { projectPrefs.getString("music_uri", null)?.let(Uri::parse) }
     var musicUri by remember { mutableStateOf(restoredMusic) }
+    var overlayText by remember { mutableStateOf(projectPrefs.getString("overlay_text", "") ?: "") }
+    var textDraft by remember { mutableStateOf(overlayText) }
+    var showTextEditor by remember { mutableStateOf(false) }
     var clips by remember { mutableStateOf(restoredClips) }
     var selected by remember { mutableIntStateOf(projectPrefs.getInt("selected", 0).coerceIn(0, (restoredClips.size - 1).coerceAtLeast(0))) }
     var notice by remember { mutableStateOf("Importe vídeos para começar.") }
@@ -97,6 +110,7 @@ private fun FrameLabScreen() {
             .putString("clips", serialized)
             .putInt("selected", selected.coerceIn(0, (clips.size - 1).coerceAtLeast(0)))
             .putString("music_uri", musicUri?.toString())
+            .putString("overlay_text", overlayText)
             .apply()
     }
 
@@ -203,7 +217,20 @@ private fun FrameLabScreen() {
                                 .build()
                         )
                     }
-                    EditedMediaItem.Builder(builder.build()).build()
+                    val editedBuilder = EditedMediaItem.Builder(builder.build())
+                    if (overlayText.isNotBlank()) {
+                        val styledText = SpannableString(overlayText.trim()).apply {
+                            setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, 0)
+                            setSpan(BackgroundColorSpan(0x99000000.toInt()), 0, length, 0)
+                            setSpan(StyleSpan(Typeface.BOLD), 0, length, 0)
+                        }
+                        editedBuilder.setEffects(
+                            Effects(emptyList(), listOf(OverlayEffect(listOf(
+                                TextOverlay.createStaticTextOverlay(styledText)
+                            ))))
+                        )
+                    }
+                    editedBuilder.build()
                 }
                 val videoSequence = EditedMediaItemSequence.Builder(editedItems).build()
                 val sequences = mutableListOf(videoSequence)
@@ -269,7 +296,7 @@ private fun FrameLabScreen() {
                     Text("FRAMELAB", color = Color.White, fontSize = 23.sp)
                     Text("VIDEO STUDIO  •  SALVAMENTO AUTOMÁTICO", color = Muted, fontSize = 10.sp)
                 }
-                Text("0.4.0", color = Muted, fontSize = 11.sp)
+                Text("0.5.0", color = Muted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -294,11 +321,24 @@ private fun FrameLabScreen() {
                         }
                     }
                 } else {
-                    AndroidView(
-                        factory = { ctx -> PlayerView(ctx).apply { player = exoPlayer; useController = true } },
-                        modifier = Modifier.fillMaxSize(),
-                        update = { it.player = exoPlayer }
-                    )
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        AndroidView(
+                            factory = { ctx -> PlayerView(ctx).apply { player = exoPlayer; useController = true } },
+                            modifier = Modifier.fillMaxSize(),
+                            update = { it.player = exoPlayer }
+                        )
+                        if (overlayText.isNotBlank()) {
+                            Text(
+                                overlayText,
+                                color = Color.White,
+                                fontSize = 22.sp,
+                                lineHeight = 26.sp,
+                                modifier = Modifier.padding(28.dp)
+                                    .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -360,7 +400,7 @@ private fun FrameLabScreen() {
                         notice = "Faixa de áudio removida do projeto."
                     }
                 }
-                Tool("Texto", "T", Modifier.weight(1f), enabled = false) {}
+                Tool("Texto", "T", Modifier.weight(1f), enabled = true) { textDraft = overlayText; showTextEditor = true }
                 Tool("Cor", "◐", Modifier.weight(1f), enabled = false) {}
                 Tool("Exportar", "↑", Modifier.weight(1f), enabled = clips.isNotEmpty() && durationMs > 0L && !exporting) {
                     if (durationMs > 0L) saveVideo.launch("FrameLab_sequencia_${System.currentTimeMillis()}.mp4")
@@ -378,8 +418,41 @@ private fun FrameLabScreen() {
                     color = Muted, fontSize = 10.sp)
             }
             Text(notice, color = Muted, fontSize = 9.sp)
-            Text("Projeto e ordem dos clipes salvos automaticamente neste dispositivo. Corte e exportação MP4 disponíveis; áudio, texto e cor ainda indisponíveis.",
+            Text("Projeto, texto e ordem dos clipes salvos automaticamente. Texto sobreposto, corte e exportação MP4 disponíveis; correção de cor ainda em desenvolvimento.",
                 color = Muted, fontSize = 9.sp)
+        }
+
+        if (showTextEditor) {
+            AlertDialog(
+                onDismissRequest = { showTextEditor = false },
+                title = { Text("Texto sobre o vídeo") },
+                text = {
+                    Column {
+                        Text("O texto será aplicado sobre todos os clipes durante a exportação.", color = Muted, fontSize = 12.sp)
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = textDraft,
+                            onValueChange = { textDraft = it.take(160) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Título ou legenda") },
+                            placeholder = { Text("Digite seu texto…") },
+                            minLines = 2,
+                            maxLines = 4
+                        )
+                        Text("${textDraft.length}/160 caracteres", color = Muted, fontSize = 10.sp)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        overlayText = textDraft.trim()
+                        showTextEditor = false
+                        notice = if (overlayText.isBlank()) "Texto removido do projeto." else "Texto salvo e aplicado à prévia e à exportação."
+                    }) { Text("Aplicar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { textDraft = overlayText; showTextEditor = false }) { Text("Cancelar") }
+                }
+            )
         }
 
         if (showTrim) {
